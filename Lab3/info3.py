@@ -2,7 +2,7 @@
 #This File will contain the information to be displayed in your portfolio
 
 #CHANGE BELOW
-profile_picture = "Images/Unknown.jpeg"
+profile_picture = "Images/unknown.jpeg"
 about_me = "Lucas is my name, and Chemistry is my Game."
 popcorn_image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Cinema_popcorn_bucket.jpg/1920px-Cinema_popcorn_bucket.jpg"
 un_image_url = "https://upload.wikimedia.org/wikipedia/commons/2/2f/Flag_of_the_United_Nations.svg"
