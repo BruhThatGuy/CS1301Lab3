@@ -77,8 +77,7 @@ spoken_data = {
     "Spanish": "Learning",
 }
 leadership_data = {
-    "LHS Chess Club Founder": (["- and president too!"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/04efc429986cc3cf71ca2b863ae2b940ed6c3c81/Lab3/Images/ChessSet.jpg"
-"),
+    "LHS Chess Club Founder": (["- and president too!"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/04efc429986cc3cf71ca2b863ae2b940ed6c3c81/Lab3/Images/ChessSet.jpg"),
 
 }
 activity_data={
