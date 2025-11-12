@@ -18,13 +18,9 @@ st.subheader("Lucas Ernstberger, Pranav Dubagunta")
 #       3. **Page Name**: Description
 #       4. **Page Name**: Description
 
-st.write("""
-Welcome to our Streamlit Web Development Lab03 app! You can navigate between the pages using the sidebar to the left. The following pages are:
+st.write("Welcome to our Streamlit Web Development Lab03 app! You can navigate between the pages using the sidebar to the left. The following pages are:")
+st.write("1. Home Page: General Information")
+st.write("2. Lucas'Portfolio: Information about one of the creators")
+st.write("3. Weather History: Gives weather information based on inputs.")
 
-1. **Home Page**: General Information
-2. **Lucas'Portfolio**: Information about one of the creators
-3. **Weather History**: Gives weather information based on inputs.
-4.
-
-""")
 
