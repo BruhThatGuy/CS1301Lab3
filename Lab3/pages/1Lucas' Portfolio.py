@@ -5,6 +5,7 @@ import pandas as pd
 def about_me_section():
     st.header("About Me")
     st.image("https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/ab17a4fece27f64d37ce50f9a65d65c2b7162b2c/Lab3/Images/unknown.jpeg")
+    st.image("https://github.com/lhernstberger/CS1301Lab3/blob/4e61f9ed16997f9fc7ff4a6626097c26628bc025/Lab3/Images/unknown.jpeg")
     #st.image("https://github.com/lhernstberger/CS1301Lab3/blob/ab17a4fece27f64d37ce50f9a65d65c2b7162b2c/Lab3/Images/unknown.jpeg", width=200)
     #info3.profile_picture, width = 200)
     st.write(info3.about_me)
