@@ -41,7 +41,7 @@ course_data = {
     }
 experience_data = {
     "Work Study Student at LC Library (2023-2025)": (["- Worked on organizing the film, music, and fiction sections",
-                                                                          "- Answered dozens of phone calls", "- Was on payroll longer than every current permanent member of staff"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/741fd0e07013af9e5552485cd47689a74f9aa47d/Lab3/Images/LCLibrary.webp"),
+                                                                          "- Answered dozens of phone calls", "- Was on payroll longer than every current permanent member of staff"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/f9949d82e876bfaff077ed79faeb73efada36056/Lab3/Images/LCLibrary.webp"),
     #"Cleaner at Krusty Krab":(["- Made the floor almost reflective",
     #                                                       "- Increased customer visits by three folds by making restaurant clean"],"Images/cleaner.jpg"),
     #"Jelly Fish Catcher":(["- Caught 100+ Jellyfish with the help of my colleague Patrick"],"Images/jelly.jpg")
@@ -77,7 +77,7 @@ spoken_data = {
     "Spanish": "Learning",
 }
 leadership_data = {
-    "LHS Chess Club Founder": (["- and president too!"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/04efc429986cc3cf71ca2b863ae2b940ed6c3c81/Lab3/Images/ChessSet.jpg"),
+    "LHS Chess Club Founder": (["- and president too!"],"https://raw.githubusercontent.com/lhernstberger/CS1301Lab3/f9949d82e876bfaff077ed79faeb73efada36056/Lab3/Images/ChessSet.jpg"),
 
 }
 activity_data={
