@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 # --- Configuration ---
 # NOTE: Replace with your actual Gemini API key, or load from environment variable
 # Streamlit provides simple ways to handle secrets. For local testing, paste it here.
-API_KEY = "AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I" 
+#THERE WAS AN API KEY HERE
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 MAX_RETRIES = 5
 
