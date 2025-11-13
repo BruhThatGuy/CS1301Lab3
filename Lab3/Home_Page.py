@@ -23,13 +23,7 @@ st.write("You can navigate between the pages using the sidebar to the left. The 
 st.write("---")
 st.write("1. **Home Page**: General Information")
 st.write("2. **Lucas'Portfolio**: Information about one of the creators")
-st.write("2. **Pranav's Portfolio**: Information about another of the creators")
-st.write("3. **Weather History**: Gives weather information based on inputs.")
+st.write("3. **Pranav's Portfolio**: Information about another of the creators")
+st.write("4. **Weather History**: Gives weather information based on inputs.")
 
-1. **Home Page**: General information
-2. **Lucas' Portfolio**: For info about Lucas
-3. **Weather History**: Where one can give a city and time range to get information
-4.
-
-""")
 
