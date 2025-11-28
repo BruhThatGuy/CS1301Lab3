@@ -112,13 +112,23 @@ def stream_response_text(full_response_text):
     return full_text
 
 def call_gemini_api(messages):
-    """Makes a direct, non-streaming call to the Gemini API for text generation."""
+    """
+    Makes a direct, non-streaming call to the Gemini API for text generation.
+    Filters out non-standard roles (like 'weather_data') to maintain the user/model sequence.
+    """
     full_url = f"{MODEL_URL}?key={API_KEY}"
     headers = {'Content-Type': 'application/json'}
     
-    # Convert Streamlit messages history to the Gemini API format
-    contents = [{"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} 
-                for m in messages]
+    # Convert Streamlit messages history to the Gemini API format, 
+    # explicitly filtering and mapping roles
+    contents = []
+    for m in messages:
+        if m["role"] == "user":
+            contents.append({"role": "user", "parts": [{"text": m["content"]}]})
+        elif m["role"] == "assistant":
+            # The 'assistant' role in Streamlit maps to the 'model' role in the Gemini API
+            contents.append({"role": "model", "parts": [{"text": m["content"]}]})
+        # All other roles (like 'weather_data') are ignored to prevent invalid sequences.
 
     payload = {
         "contents": contents,
@@ -193,6 +203,7 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
         
         # We need to manually add the weather data to the history for context, 
         # but hide it from the user by not rerunning yet.
+        # We still add this temporary entry so we can pop it off later.
         st.session_state.messages.append({"role": "weather_data", "content": f"Weather API returned: {weather_data_json}"})
 
     else:
@@ -201,12 +212,10 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
 
     # 3. Get LLM Response
     
-    # Since we modified the input content, we temporarily add it to a list for the API call
-    # and then revert to the history for the final save.
-    
-    # The messages sent to the API are the full history PLUS the temporary synthesis prompt
+    # The messages sent to the API are the full history PLUS the final user prompt (synthesis or general)
     messages_for_api = st.session_state.messages + [{"role": "user", "content": llm_input_content}]
 
+    # call_gemini_api will now filter out the temporary 'weather_data' entry
     gemini_response_text = call_gemini_api(messages_for_api)
 
     # 4. Display Assistant Response (with streaming simulation, per tutorial)
@@ -214,9 +223,9 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
         final_response = stream_response_text(gemini_response_text)
     
     # 5. Add Assistant Response to History (as per tutorial)
-    # If the weather query was made, we need to ensure only the user/assistant messages are visible.
-    if 'weather_data' in st.session_state.messages[-1]['role']:
-        st.session_state.messages.pop() # Remove the hidden weather_data entry
+    # If the weather query was made, we remove the hidden weather_data entry first.
+    if st.session_state.messages[-1]["role"] == 'weather_data':
+        st.session_state.messages.pop() 
     
     st.session_state.messages.append({"role": "assistant", "content": final_response})
     
