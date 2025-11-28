@@ -7,10 +7,9 @@ import functools
 
 # --- Configuration & State ---
 # NOTE: Replace with your actual Gemini API key, or load from environment variable
+# If running in a secure environment, consider using st.secrets or environment variables.
 API_KEY = "AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I" 
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
-# Removed MAX_RETRIES as we are no longer implementing retries
-# MAX_RETRIES = 5 
 DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025"
 
 if "messages" not in st.session_state:
@@ -18,44 +17,31 @@ if "messages" not in st.session_state:
 
 # --- Tool Definitions for LLM Function Calling ---
 
-def get_population(city_data):
-    """Helper function to safely retrieve the population for city comparison."""
-    # Use .get() with a default value of 0 to safely handle missing 'population' key
-    return city_data.get("population", 0)
-
+@st.cache_data(ttl=3600) # Cache the geocoding results for 1 hour
 def geocode_city(city):
     """Fetches latitude and longitude for a city."""
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
     
     try:
-        # Attempt the API request
         response = requests.get(url, timeout=10)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        
-        # Attempt to parse JSON response
+        response.raise_for_status() 
         data = response.json()
-        
     except requests.exceptions.RequestException as e:
-        # Handle network errors, timeouts, and HTTP errors
         print(f"Geocoding API Request Error for {city}: {e}")
         return None, None
     except json.JSONDecodeError as e:
-        # Handle case where response is not valid JSON
         print(f"Geocoding API JSON Decode Error for {city}: {e}")
         return None, None
     
-    # Existing logic to process valid data
     if "results" not in data or len(data["results"]) == 0:
         return None, None
     
-    # Select the most populated city by iterating manually, avoiding the 'key' argument.
+    # Select the city with the highest population for the best match
     best_match = None
     max_population = -1 
 
     for city_data in data["results"]:
-        # Use the helper function to get the current population
-        current_population = get_population(city_data)
-        
+        current_population = city_data.get("population", 0)
         if current_population > max_population:
             max_population = current_population
             best_match = city_data
@@ -84,15 +70,12 @@ def get_current_and_forecast_weather(city: str, units: str = 'celsius') -> str:
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,weather_code&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto&{temp_unit}"
     
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
         
         # Extract Current Data
         current = data.get('current', {})
-        current_temp = current.get('temperature_2m')
-        current_code = current.get('weather_code')
-        wind_speed = current.get('wind_speed_10m')
         
         unit_symbol = "°F" if units == "fahrenheit" else "°C"
 
@@ -111,9 +94,8 @@ def get_current_and_forecast_weather(city: str, units: str = 'celsius') -> str:
             "city": city,
             "units": unit_symbol,
             "current_conditions": {
-                "temperature": current_temp,
-                "wind_speed": wind_speed,
-                "note": "Weather code is not provided for simplification."
+                "temperature": current.get('temperature_2m'),
+                "wind_speed": current.get('wind_speed_10m'),
             },
             "seven_day_forecast": forecasts
         })
@@ -138,10 +120,8 @@ def extract_sources(attributions):
             sources.append({'uri': attr['web']['uri'], 'title': attr['web']['title']})
     return sources
 
-# Removed fetch_with_exponential_backoff function
-
 def call_gemini_api(messages):
-    """Handles the main chat loop with tool calling logic."""
+    """Handles the main chat loop with tool calling logic and exponential backoff."""
     
     if not API_KEY:
         st.error("Gemini API_KEY is missing.")
@@ -150,11 +130,9 @@ def call_gemini_api(messages):
     full_url = f"{MODEL_URL}?key={API_KEY}"
     headers = {'Content-Type': 'application/json'}
     
-    # 1. Define the tools for the LLM
-    # The search tool is used for general grounding/knowledge.
+    # --- 1. Define the tools for the LLM ---
     tools_config = [{"google_search": {}}] 
     
-    # The weather tool is defined via its function structure
     weather_tool_definition = {
         "functionDeclarations": [
             {
@@ -172,22 +150,24 @@ def call_gemini_api(messages):
         ]
     }
     
-    # Combine search and the function tool
     all_tools = [tools_config[0], {"functionDeclarations": weather_tool_definition["functionDeclarations"]}]
 
-    # 2. Construct the payload
-    # Convert Streamlit messages history to the Gemini API format
+    # --- 2. Construct the payload ---
+    # Convert Streamlit messages history to the Gemini API format (role mapping)
     contents = []
     for message in messages:
         if message["role"] == "user":
             contents.append({"role": "user", "parts": [{"text": message["text"]}]})
         elif message["role"] == "model":
-            # This logic might need refinement for complex tool calls in history
-            contents.append({"role": "model", "parts": [{"text": message["text"]}]})
-        elif message["role"] == "function_response":
+            # Check if the message contains a tool call instead of plain text
+            if "functionCall" in message:
+                contents.append({"role": "model", "parts": [{"functionCall": message["functionCall"]}]})
+            else:
+                contents.append({"role": "model", "parts": [{"text": message["text"]}]})
+        elif message["role"] == "function":
+             # This handles the function response back to the model
             contents.append({"role": "function", "parts": [{"functionResponse": message["functionResponse"]}]})
-        elif message["role"] == "tool_call":
-            contents.append({"role": "model", "parts": [{"functionCall": message["functionCall"]}]})
+
 
     payload = {
         "contents": contents,
@@ -196,32 +176,59 @@ def call_gemini_api(messages):
         }
     }
 
-    # 3. Initial API Call (LLM decides text, search, or tool)
-    with st.spinner("Thinking..."):
+    # --- 3. Initial API Call (with simple retry/backoff) ---
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            # Direct API call without backoff/retry logic
-            response = requests.post(full_url, headers=headers, data=json.dumps(payload), timeout=60)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            result = response.json()
+            with st.spinner(f"Thinking... (Attempt {attempt + 1}/{max_retries})"):
+                # Use a small backoff delay
+                if attempt > 0:
+                    time.sleep(2 ** attempt)
+
+                response = requests.post(full_url, headers=headers, data=json.dumps(payload), timeout=90)
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                result = response.json()
+                
+                # Success
+                break 
+
+        except requests.exceptions.HTTPError as e:
+            if response.status_code in [429, 500, 503] and attempt < max_retries - 1:
+                st.warning(f"Rate limit or server error ({response.status_code}). Retrying...")
+                continue
+            else:
+                st.error(f"Error during API call: {response.status_code} - {e}")
+                return {"text": f"Error: Could not complete API request. Status code {response.status_code}."}
         except requests.exceptions.RequestException as e:
-            st.error(f"Error during API call: {e}")
-            return
+            if attempt < max_retries - 1:
+                st.warning(f"Network error. Retrying... ({e})")
+                continue
+            else:
+                st.error(f"Fatal Network Error: {e}")
+                return {"text": "Error: Could not connect to the Gemini API."}
         except json.JSONDecodeError as e:
             st.error(f"Error decoding API response: {e}")
-            return
+            return {"text": "Error: Could not decode response from Gemini API."}
+    else:
+        # This branch runs if the loop completes without 'break' (all attempts failed)
+        return {"text": "Error: Failed to get a response from Gemini after multiple attempts."}
 
 
     candidate = result.get('candidates', [{}])[0]
     
-    # 4. Check for Function Call
-    if 'functionCall' in candidate.get('content', {}).get('parts', [{}])[0]:
+    # --- 4. Check for Function Call ---
+    # The response structure for function call is nested deeply
+    content_parts = candidate.get('content', {}).get('parts', [{}])
+    
+    if content_parts and 'functionCall' in content_parts[0]:
         
-        function_call = candidate['content']['parts'][0]['functionCall']
+        function_call = content_parts[0]['functionCall']
         func_name = function_call['name']
         func_args = dict(function_call['args'])
         
+        # Add the model's intent (function call) to the history
         st.session_state["messages"].append({
-            "role": "tool_call",
+            "role": "model",
             "functionCall": function_call
         })
         
@@ -236,7 +243,7 @@ def call_gemini_api(messages):
             
             # Add function response to history
             st.session_state["messages"].append({
-                "role": "function_response",
+                "role": "function",
                 "functionResponse": {
                     "name": func_name,
                     "response": {"content": function_output}
@@ -244,26 +251,25 @@ def call_gemini_api(messages):
             })
             
             # Recursive call with function result to get final LLM response
-            with st.spinner("Synthesizing tool output..."):
-                # Recursive API call now uses the direct request logic inside call_gemini_api
-                final_response = call_gemini_api(st.session_state["messages"]) 
-                return final_response
+            # The recursive call uses the updated st.session_state["messages"]
+            final_response = call_gemini_api(st.session_state["messages"]) 
+            return final_response
         else:
-            return "Error: Unknown tool requested by model."
+            return {"text": "Error: Unknown tool requested by model."}
 
-    # 5. Handle Text Response (with or without grounding)
-    text = candidate.get('content', {}).get('parts', [{}])[0].get('text', 'No response generated.')
+    # --- 5. Handle Text Response (with or without grounding) ---
+    text = content_parts[0].get('text', 'No response generated.')
     sources = extract_sources(candidate.get('groundingMetadata', {}).get('groundingAttributions'))
 
     response_data = {"text": text, "sources": sources}
-    st.session_state["messages"].append({"role": "model", "text": response_data})
+    # Do NOT add to history here, it is added in the main loop to ensure correct order
     return response_data
 
 # --- Streamlit Application Layout ---
 
 def main():
-    st.set_page_config(page_title="Gemini Chatbot with Weather Tool", layout="centered")
-    st.title("🤖 General Chatbot with Open-Meteo Tool")
+    st.set_page_config(page_title="Gemini Weather Chatbot", layout="centered")
+    st.title("🤖 Gemini Chatbot with Weather Tool")
     
     # Check for API Key
     if not API_KEY:
@@ -277,33 +283,42 @@ def main():
                 st.markdown(message["text"])
         elif message["role"] == "model":
             with st.chat_message("assistant"):
-                st.markdown(message["text"]["text"] if isinstance(message["text"], dict) else message["text"])
-                if isinstance(message["text"], dict) and message["text"]["sources"]:
-                    with st.expander("Grounded Sources (via Google Search)"):
-                        for source in message["text"]["sources"]:
-                            st.markdown(f"[{source['title']}]({source['uri']})")
-        # Tool call messages are displayed as info banners
-        elif message["role"] == "tool_call":
-            with st.chat_message("assistant"):
-                st.info(f"Tool Call: {message['functionCall']['name']}({dict(message['functionCall']['args'])})")
-        elif message["role"] == "function_response":
+                # Check if the model message is a plain text response or a tool call
+                if "functionCall" in message:
+                    st.info(f"Tool Call: {message['functionCall']['name']}({dict(message['functionCall']['args'])})")
+                elif isinstance(message["text"], dict):
+                    # Display the final text response
+                    st.markdown(message["text"]["text"])
+                    # Display sources if available
+                    if message["text"]["sources"]:
+                        with st.expander("Grounded Sources (via Google Search)"):
+                            for source in message["text"]["sources"]:
+                                st.markdown(f"[{source['title']}]({source['uri']})")
+                else:
+                    st.markdown(message["text"]) # Fallback for simple string messages
+        # Function response (tool output) is displayed as code block
+        elif message["role"] == "function":
             with st.chat_message("assistant"):
                 st.code(message['functionResponse']['response']['content'], language='json')
                 
     # Handle user input
     if prompt := st.chat_input("Ask a general question, or a weather query for a city..."):
         
-        # Add user message to history
+        # 1. Add user message to history
         st.session_state["messages"].append({"role": "user", "text": prompt})
         
-        # Display the user message immediately
+        # 2. Display the user message immediately
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Call the API and get the response
+        # 3. Call the API and handle the response/tool-calling loop
         response_data = call_gemini_api(st.session_state["messages"])
         
-        # Rerun to display the model's response and any tool execution steps
+        # 4. Only add the final text response to the history here.
+        if response_data and "text" in response_data:
+            st.session_state["messages"].append({"role": "model", "text": response_data})
+        
+        # 5. Rerun to display the model's response and any tool execution steps
         st.rerun()
 
 if __name__ == "__main__":
