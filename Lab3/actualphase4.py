@@ -13,6 +13,7 @@ MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-
 DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025"
 
 if "messages" not in st.session_state:
+    # Initial message text is stored as a simple string for simplicity
     st.session_state["messages"] = [{"role": "model", "text": "Hello! I am a general-purpose assistant. You can ask me anything, or try asking for the **current weather or a 7-day forecast** for any city!"}]
 
 # --- Tool Definitions for LLM Function Calling ---
@@ -286,8 +287,10 @@ def main():
                 # Check if the model message is a plain text response or a tool call
                 if "functionCall" in message:
                     st.info(f"Tool Call: {message['functionCall']['name']}({dict(message['functionCall']['args'])})")
+                
+                # FIXED: Check if 'text' is a dictionary before trying to access 'sources'
                 elif isinstance(message["text"], dict):
-                    # Display the final text response
+                    # This branch handles responses from call_gemini_api that include sources
                     st.markdown(message["text"]["text"])
                     # Display sources if available
                     if message["text"]["sources"]:
@@ -295,7 +298,9 @@ def main():
                             for source in message["text"]["sources"]:
                                 st.markdown(f"[{source['title']}]({source['uri']})")
                 else:
-                    st.markdown(message["text"]) # Fallback for simple string messages
+                    # This branch handles the initial string greeting message and other simple strings
+                    st.markdown(message["text"])
+        
         # Function response (tool output) is displayed as code block
         elif message["role"] == "function":
             with st.chat_message("assistant"):
