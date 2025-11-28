@@ -6,7 +6,7 @@ import re # For simple keyword checking
 
 # --- Configuration & Gemini API Setup ---
 # NOTE: Replace with your actual Gemini API key
-API_KEY = "AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I" 
+API_KEY = "" 
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025"
 
