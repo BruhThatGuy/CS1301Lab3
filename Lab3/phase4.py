@@ -6,7 +6,7 @@ import re # For simple keyword checking
 
 # --- Configuration & Gemini API Setup ---
 # NOTE: Replace with your actual Gemini API key
-API_KEY = "" 
+API_KEY = "AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I" 
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025"
 
@@ -138,6 +138,7 @@ def call_gemini_api(messages):
 
     try:
         with st.spinner("Thinking..."):
+            # Use requests.post for the API call
             response = requests.post(full_url, headers=headers, data=json.dumps(payload), timeout=60)
             response.raise_for_status() 
             result = response.json()
@@ -149,6 +150,7 @@ def call_gemini_api(messages):
         return text
 
     except requests.exceptions.RequestException as e:
+        # Improved error handling to return the error message
         return f"Error during Gemini API call: {e}"
     except json.JSONDecodeError:
         return "Error: Could not decode response from Gemini API."
@@ -169,7 +171,7 @@ for message in st.session_state.messages:
 # Accept user input (as per tutorial)
 if prompt := st.chat_input("Ask a question or check the weather..."):
     
-    # 1. Add user message to history and display
+    # 1. Add user message to history and display (The original prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -177,12 +179,14 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
     # 2. Check for Weather Keywords (Hybrid Logic)
     city_match = re.search(r"weather in ([\w\s]+)", prompt, re.IGNORECASE)
     
+    llm_input_content = prompt # Default LLM input is the original prompt
+    temporary_weather_data = None
+    
     if city_match:
         city = city_match.group(1).strip()
         st.info(f"Detected weather query for **{city}**. Calling weather API directly...")
         
         # Execute the weather tool locally
-        # Note: This call may now fail the application if a network error occurs.
         try:
             weather_data_json = get_current_and_forecast_weather(city)
         except Exception as e:
@@ -198,24 +202,33 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
         Synthesize the above weather data into a friendly, natural language response based on the user's query. Do not output the JSON directly. If there was an error fetching data, report the error nicely.
         """
         
-        # Use the synthesis prompt for the next LLM call
+        # Override the LLM input content with the synthesis prompt
         llm_input_content = synthesis_prompt
         
-        # We need to manually add the weather data to the history for context, 
-        # but hide it from the user by not rerunning yet.
-        # We still add this temporary entry so we can pop it off later.
-        st.session_state.messages.append({"role": "weather_data", "content": f"Weather API returned: {weather_data_json}"})
+        # Store the temporary weather data for cleanup later
+        temporary_weather_data = {"role": "weather_data", "content": f"Weather API returned: {weather_data_json}"}
+        st.session_state.messages.append(temporary_weather_data)
 
-    else:
-        # General chat - use the user's prompt directly
-        llm_input_content = prompt
 
     # 3. Get LLM Response
     
-    # The messages sent to the API are the full history PLUS the final user prompt (synthesis or general)
-    messages_for_api = st.session_state.messages + [{"role": "user", "content": llm_input_content}]
+    # CRITICAL FIX: Ensure only ONE final 'user' message is sent to the API.
+    # The history sent to the API is constructed by:
+    # a. Taking all previous messages (st.session_state.messages[:-2] if weather, or st.session_state.messages[:-1] if general).
+    # b. Appending the final, consolidated 'user' prompt (llm_input_content).
+    
+    # Start with the history *excluding* the last item added (the original 'user' prompt)
+    messages_for_api = st.session_state.messages[:-1] 
 
-    # call_gemini_api will now filter out the temporary 'weather_data' entry
+    # If weather was detected, remove the temporary 'weather_data' message as well
+    if temporary_weather_data and messages_for_api and messages_for_api[-1]["role"] == "weather_data":
+        # Remove the 'weather_data' entry that was temporarily placed in the history
+        messages_for_api = messages_for_api[:-1]
+    
+    # Now, append the single, final user message for the LLM to process (either synthesis or general)
+    messages_for_api.append({"role": "user", "content": llm_input_content})
+
+    # call_gemini_api will now filter out any other non-standard roles
     gemini_response_text = call_gemini_api(messages_for_api)
 
     # 4. Display Assistant Response (with streaming simulation, per tutorial)
@@ -223,10 +236,18 @@ if prompt := st.chat_input("Ask a question or check the weather..."):
         final_response = stream_response_text(gemini_response_text)
     
     # 5. Add Assistant Response to History (as per tutorial)
-    # If the weather query was made, we remove the hidden weather_data entry first.
-    if st.session_state.messages[-1]["role"] == 'weather_data':
-        st.session_state.messages.pop() 
     
+    # Cleanup: We must ensure the session history reflects the correct user/assistant conversation.
+    
+    # 5a. Remove the temporary 'weather_data' message (if it exists)
+    if temporary_weather_data and st.session_state.messages[-1]["role"] == 'weather_data':
+        st.session_state.messages.pop() 
+        
+    # 5b. The list still contains the original user prompt at the end. We need to keep it, 
+    # but the history manipulation in step 3 may have broken the alternating pattern if done wrong.
+    # Since we only popped the temporary data, the original user prompt is still at the end.
+    
+    # 5c. Finally, add the final assistant response
     st.session_state.messages.append({"role": "assistant", "content": final_response})
     
     # Rerun to clear the temporary st.info and ensure final state
