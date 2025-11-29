@@ -31,8 +31,8 @@ with st.sidebar:
     st.write("---")
     
     # Manual model name input
-    model_name = st.text_input("Model Name:", value="gemini-pro")
-    st.caption("Click 'List Available Models' above to see options")
+    model_name = st.text_input("Model Name:", value="gemini-2.0-flash-exp")
+    st.caption("Default: gemini-2.0-flash-exp")
 
 # Initialize session state
 if "messages" not in st.session_state:
