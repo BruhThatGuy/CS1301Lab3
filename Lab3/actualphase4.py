@@ -47,7 +47,7 @@ if prompt := st.chat_input("Ask me about weather..."):
         with st.spinner("Thinking..."):
             try:
                 # Create Gemini model
-                model = genai.GenerativeModel('models/gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 
                 # Build conversation history for context
                 conversation = []
@@ -81,7 +81,7 @@ Current date is """ + str(datetime.date.today())
                     Start Date: [YYYY-MM-DD or 'recent' or 'today']
                     End Date: [YYYY-MM-DD or 'recent' or 'today']
                     
-                    If no specific dates mentioned, use the last 7 days."""
+                    If no specific dates mentioned, use the last 7 days.""
                     
                     extraction = model.generate_content(extract_prompt)
                     extraction_text = extraction.text
@@ -165,3 +165,10 @@ Provide a helpful, conversational answer about this weather data."""
                 error_msg = f"Error: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
+pythonimport google.generativeai as genai
+
+genai.configure(api_key="YOUR_API_KEY_HERE")
+
+for model in genai.list_models():
+    if 'generateContent' in model.supported_generation_methods:
+        print(model.name)
