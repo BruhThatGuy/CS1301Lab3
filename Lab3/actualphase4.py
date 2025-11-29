@@ -81,7 +81,7 @@ Current date is """ + str(datetime.date.today())
                     Start Date: [YYYY-MM-DD or 'recent' or 'today']
                     End Date: [YYYY-MM-DD or 'recent' or 'today']
                     
-                    If no specific dates mentioned, use the last 7 days.""
+                    If no specific dates mentioned, use the last 7 days."""
                     
                     extraction = model.generate_content(extract_prompt)
                     extraction_text = extraction.text
