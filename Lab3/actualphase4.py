@@ -47,7 +47,7 @@ if prompt := st.chat_input("Ask me about weather..."):
         with st.spinner("Thinking..."):
             try:
                 # Create Gemini model
-                model = genai.GenerativeModel('gemini-pro')
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 # Build conversation history for context
                 conversation = []
