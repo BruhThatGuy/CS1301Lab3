@@ -129,9 +129,9 @@ Current date is """ + str(datetime.date.today())
                                     
                                     weather_context = f"""
 Weather data for {city_name} from {start_date} to {end_date}:
-- Average temperature: {avg_temp}°F
-- Highest temperature: {max_temp}°F
-- Lowest temperature: {min_temp}°F
+- Average temperature: {avg_temp} degrees F
+- Highest temperature: {max_temp} degrees F
+- Lowest temperature: {min_temp} degrees F
 - Daily temperatures: {list(zip(dates, temps))}
 
 User question: {prompt}
@@ -165,10 +165,3 @@ Provide a helpful, conversational answer about this weather data."""
                 error_msg = f"Error: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
-pythonimport google.generativeai as genai
-
-genai.configure(api_key="YOUR_API_KEY_HERE")
-
-for model in genai.list_models():
-    if 'generateContent' in model.supported_generation_methods:
-        print(model.name)
