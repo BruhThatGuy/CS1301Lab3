@@ -3,6 +3,12 @@ import datetime
 import requests
 import google.generativeai as genai
 
+genai.configure(api_key="AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I")
+
+for model in genai.list_models():
+    if 'generateContent' in model.supported_generation_methods:
+        print(model.name)
+        
 st.set_page_config(page_title="Weather Chat Assistant", page_icon="🌤️")
 
 st.title("🌤️ Weather Chat Assistant")
