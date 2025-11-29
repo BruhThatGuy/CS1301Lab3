@@ -5,174 +5,163 @@ import google.generativeai as genai
 
 st.set_page_config(page_title="Weather Chat Assistant", page_icon="🌤️")
 
-st.header("🌤️ Weather Data Chat Assistant")
-st.write("Fetch weather data and ask questions about it!")
+st.title("🌤️ Weather Chat Assistant")
 
-# Gemini API key input
-if "api_key" not in st.session_state:
-    st.session_state.api_key = "AIzaSyBg7BL-ACkEFFkSHjTxXk_trTOJu1vON5I"
-
-api_key = st.text_input("Enter your Gemini API Key:", type="password", value=st.session_state.api_key)
-
-if api_key:
-    st.session_state.api_key = api_key
-    genai.configure(api_key=api_key)
-else:
-    st.info("Please enter your Gemini API key to continue. Get one at https://makersuite.google.com/app/apikey")
-    st.stop()
-
-st.write("---")
-
-# Input fields
-col1, col2 = st.columns(2)
-with col1:
-    city = st.text_input("City:", "Atlanta")
-    start = st.date_input("Start Date:", value=datetime.date(2024, 1, 1), 
-                          min_value=datetime.date(1995, 1, 1), 
-                          max_value=datetime.date(2024, 10, 31))
-
-with col2:
-    units = st.selectbox("Temperature Units:", ["Fahrenheit", "Celsius"])
-    end = st.date_input("End Date:", value=datetime.date(2024, 10, 31),
-                        min_value=datetime.date(1995, 1, 1), 
-                        max_value=datetime.date(2025, 10, 31))
+# Sidebar for API key and settings
+with st.sidebar:
+    st.header("Settings")
+    api_key = st.text_input("Gemini API Key:", type="password")
+    
+    if api_key:
+        genai.configure(api_key=api_key)
+        st.success("API Key configured!")
+    else:
+        st.info("Get your API key from https://makersuite.google.com/app/apikey")
+    
+    st.write("---")
+    st.write("Ask me about weather in any city!")
+    st.write("Example: *What's the weather in Paris for the last week?*")
 
 # Initialize session state
-if "weather_data" not in st.session_state:
-    st.session_state.weather_data = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "city_info" not in st.session_state:
-    st.session_state.city_info = {}
 
-# Fetch weather data
-if st.button("Fetch Weather Data"):
-    if end < start:
-        st.error("End date must be after start date.")
+# Display chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+
+# Chat input
+if prompt := st.chat_input("Ask me about weather..."):
+    if not api_key:
+        st.error("Please enter your Gemini API key in the sidebar.")
         st.stop()
     
-    try:
-        with st.spinner("Fetching weather data..."):
-            # Geocoding
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
-            response = requests.get(url)
-            data = response.json()
-            
-            if "results" not in data or len(data["results"]) == 0:
-                st.error("City not found. Check spelling or try a different city.")
-                st.stop()
-            
-            # Get coordinates of largest city
-            pophigh = 0
-            lat, long = 0, 0
-            city_name = city
-            for c in data["results"]:
-                if "population" in c and c["population"] > pophigh:
-                    pophigh = c["population"]
-                    lat = c["latitude"]
-                    long = c["longitude"]
-                    city_name = c["name"]
-            
-            # Fetch weather data
-            unit_param = units.lower()
-            if unit_param == "fahrenheit":
-                url2 = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={long}&start_date={start}&end_date={end}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&hourly=temperature_2m&temperature_unit={unit_param}"
-            else:
-                url2 = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={long}&start_date={start}&end_date={end}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&hourly=temperature_2m"
-            
-            response2 = requests.get(url2)
-            weather_data = response2.json()
-            
-            if "daily" not in weather_data or "temperature_2m_mean" not in weather_data["daily"]:
-                st.error("No temperature data available for this time frame.")
-                st.stop()
-            
-            # Store data in session state
-            st.session_state.weather_data = weather_data
-            st.session_state.city_info = {
-                "name": city_name,
-                "lat": lat,
-                "long": long,
-                "start_date": str(start),
-                "end_date": str(end),
-                "units": units
-            }
-            st.session_state.messages = []  # Clear chat history on new data fetch
-            
-            st.success(f"Weather data fetched for {city_name}! You can now ask questions.")
-            
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-
-st.write("---")
-
-# Chat interface
-if st.session_state.weather_data:
-    st.subheader(f"💬 Chat about {st.session_state.city_info['name']} Weather")
+    # Add user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
     
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-    
-    # Chat input
-    if prompt := st.chat_input("Ask a question about the weather data..."):
-        # Add user message to chat
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-        
-        # Prepare context for Gemini
-        weather_data = st.session_state.weather_data
-        city_info = st.session_state.city_info
-        
-        dates = weather_data["daily"]["time"]
-        temps_mean = weather_data["daily"]["temperature_2m_mean"]
-        temps_max = weather_data["daily"]["temperature_2m_max"]
-        temps_min = weather_data["daily"]["temperature_2m_min"]
-        
-        avg_temp = round(sum(temps_mean) / len(temps_mean), 1)
-        max_temp = max(temps_max)
-        min_temp = min(temps_min)
-        
-        context = f"""
-You are a helpful weather assistant. Answer questions about the following weather data:
+    # Generate response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            try:
+                # Create Gemini model
+                model = genai.GenerativeModel('gemini-pro')
+                
+                # Build conversation history for context
+                conversation = []
+                for msg in st.session_state.messages:
+                    conversation.append(f"{msg['role']}: {msg['content']}")
+                
+                # System prompt
+                system_context = """You are a helpful weather assistant. When users ask about weather:
+1. Extract the city name and date range from their question
+2. Use this information to fetch weather data from the Open-Meteo API
+3. Provide helpful answers based on the data
 
-City: {city_info['name']}
-Location: Latitude {city_info['lat']}, Longitude {city_info['long']}
-Date Range: {city_info['start_date']} to {city_info['end_date']}
-Temperature Units: {city_info['units']}
+For weather data fetching:
+- Use Open-Meteo Geocoding API: https://geocoding-api.open-meteo.com/v1/search?name={city}
+- Use Open-Meteo Archive API: https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start}&end_date={end}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean
 
-Summary Statistics:
-- Average Temperature: {avg_temp}°
-- Highest Temperature: {max_temp}°
-- Lowest Temperature: {min_temp}°
-- Number of days: {len(dates)}
+If the user asks about weather, explain what you found and provide insights.
+If you need to fetch data, describe what data you would fetch and provide a helpful response.
 
-Daily Data (Date, Mean Temp, Max Temp, Min Temp):
-"""
-        
-        # Add sample of daily data (limit to avoid token limits)
-        sample_size = min(30, len(dates))
-        for i in range(0, len(dates), max(1, len(dates) // sample_size)):
-            context += f"\n{dates[i]}: Mean={temps_mean[i]}°, Max={temps_max[i]}°, Min={temps_min[i]}°"
-        
-        context += f"\n\nUser Question: {prompt}\n\nProvide a helpful, concise answer based on this data."
-        
-        # Generate response with Gemini
-        try:
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    model = genai.GenerativeModel('gemini-pro')
-                    response = model.generate_content(context)
+Current date is """ + str(datetime.date.today())
+                
+                full_prompt = system_context + "\n\n" + "\n".join(conversation[-5:])
+                
+                # Check if user is asking about weather
+                if any(word in prompt.lower() for word in ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm']):
+                    # Try to extract city and dates
+                    extract_prompt = f"""Extract the city name and date range from this question: "{prompt}"
+                    
+                    Return in this format:
+                    City: [city name]
+                    Start Date: [YYYY-MM-DD or 'recent' or 'today']
+                    End Date: [YYYY-MM-DD or 'recent' or 'today']
+                    
+                    If no specific dates mentioned, use the last 7 days."""
+                    
+                    extraction = model.generate_content(extract_prompt)
+                    extraction_text = extraction.text
+                    
+                    # Simple parsing to get city
+                    city = None
+                    for line in extraction_text.split('\n'):
+                        if 'City:' in line or 'city:' in line:
+                            city = line.split(':')[1].strip()
+                            break
+                    
+                    if city and city.lower() not in ['none', 'not specified', 'n/a']:
+                        try:
+                            # Fetch weather data
+                            # Geocoding
+                            url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
+                            response = requests.get(url, timeout=10)
+                            data = response.json()
+                            
+                            if "results" in data and len(data["results"]) > 0:
+                                # Get first result
+                                result = data["results"][0]
+                                lat = result["latitude"]
+                                lon = result["longitude"]
+                                city_name = result["name"]
+                                
+                                # Default to last 7 days
+                                end_date = datetime.date.today()
+                                start_date = end_date - datetime.timedelta(days=7)
+                                
+                                # Fetch weather
+                                weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&temperature_unit=fahrenheit"
+                                weather_response = requests.get(weather_url, timeout=10)
+                                weather_data = weather_response.json()
+                                
+                                if "daily" in weather_data:
+                                    temps = weather_data["daily"]["temperature_2m_mean"]
+                                    temp_max = weather_data["daily"]["temperature_2m_max"]
+                                    temp_min = weather_data["daily"]["temperature_2m_min"]
+                                    dates = weather_data["daily"]["time"]
+                                    
+                                    avg_temp = round(sum(temps) / len(temps), 1)
+                                    max_temp = max(temp_max)
+                                    min_temp = min(temp_min)
+                                    
+                                    weather_context = f"""
+Weather data for {city_name} from {start_date} to {end_date}:
+- Average temperature: {avg_temp}°F
+- Highest temperature: {max_temp}°F
+- Lowest temperature: {min_temp}°F
+- Daily temperatures: {list(zip(dates, temps))}
+
+User question: {prompt}
+
+Provide a helpful, conversational answer about this weather data."""
+                                    
+                                    response = model.generate_content(weather_context)
+                                    assistant_response = response.text
+                                else:
+                                    assistant_response = f"I found {city_name} but couldn't get weather data for that time period. Try a different date range?"
+                            else:
+                                assistant_response = f"I couldn't find weather data for '{city}'. Could you check the city name?"
+                        
+                        except Exception as e:
+                            assistant_response = f"I had trouble fetching weather data: {str(e)}. Could you try rephrasing your question?"
+                    else:
+                        # No city found, general response
+                        response = model.generate_content(full_prompt)
+                        assistant_response = response.text
+                else:
+                    # General conversation
+                    response = model.generate_content(full_prompt)
                     assistant_response = response.text
-                    st.write(assistant_response)
-            
-            # Add assistant response to chat
-            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-            
-        except Exception as e:
-            with st.chat_message("assistant"):
-                st.error(f"Error generating response: {e}")
-else:
-    st.info("👆 Fetch weather data first to start chatting!")
+                
+                st.write(assistant_response)
+                
+                # Add assistant message
+                st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+                
+            except Exception as e:
+                error_msg = f"Error: {str(e)}"
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
