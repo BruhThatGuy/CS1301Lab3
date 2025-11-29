@@ -31,8 +31,8 @@ with st.sidebar:
     st.write("---")
     
     # Manual model name input
-    model_name = st.text_input("Model Name:", value="gemini-2.0-flash-exp")
-    st.caption("Default: gemini-2.0-flash-exp")
+    model_name = st.text_input("Model Name:", value="gemini-pro")
+    st.caption("Click 'List Available Models' above to see options")
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -63,20 +63,14 @@ if prompt := st.chat_input("Ask me about weather in any city..."):
                 
                 # Check if user is asking about weather
                 if any(word in prompt.lower() for word in ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']):
-                    # Use a simple keyword extraction instead of API call
-                    words = prompt.lower().split()
+                    # Try to extract city
+                    extract_prompt = f"""From this question, extract ONLY the city name. Return just the city name, nothing else: "{prompt}" """
                     
-                    # Common words to skip
-                    skip_words = {'the', 'in', 'what', 'whats', 'is', 'how', 'weather', 'temperature', 
-                                  'temp', 'like', 'today', 'about', 'for', 'at', 'a', 'an', 'tell', 'me'}
+                    extraction = model.generate_content(extract_prompt)
+                    city = extraction.text.strip()
                     
-                    # Find potential city name (capitalize words that aren't skip words)
-                    city = None
-                    for i, word in enumerate(words):
-                        clean_word = word.strip('?.,!').title()
-                        if clean_word.lower() not in skip_words and len(clean_word) > 2:
-                            city = clean_word
-                            break
+                    # Clean up the city name
+                    city = city.replace('"', '').replace("'", "").split(',')[0].split('.')[0].strip()
                     
                     if city and len(city) > 0 and len(city) < 50:
                         try:
