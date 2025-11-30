@@ -156,7 +156,7 @@ Answer their question using this recent weather data and prediction."""
                             # Get data from the same period in previous years
                             # For example, if they ask about January 15, 2026, get January 15 from 2015-2025
                             historical_data = []
-                            years_to_check = 10  # Check last 10 years
+                            years_to_check = 30  # Check last 10 years
                             
                             for year_offset in range(1, years_to_check + 1):
                                 historical_date = target_date.replace(year=target_date.year - year_offset)
