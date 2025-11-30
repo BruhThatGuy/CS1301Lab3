@@ -12,7 +12,7 @@ st.title("🌤️ Weather Chat Assistant")
 # ============================================================================
 # CONSTANTS
 # ============================================================================
-MODEL_NAME = "gemini-2.0-flash-exp"
+MODEL_NAME = "gemini-2.5-flash"
 WEATHER_KEYWORDS = ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_API = "https://archive-api.open-meteo.com/v1/archive"
