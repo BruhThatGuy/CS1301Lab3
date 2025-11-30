@@ -17,12 +17,42 @@ with st.sidebar:
         st.success("API Key configured!")
     else:
         st.info("Get your API key from https://makersuite.google.com/app/apikey")
-    
-    st.write("---")
+
+# Set model name
+model_name = "gemini-2.5-flash"
 
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+def get_response_text(response):
+    """Safely extract text from Gemini response with error handling"""
+    try:
+        # Check if response has parts with text
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            
+            # Check finish reason
+            if candidate.finish_reason != 1:  # 1 = STOP (successful completion)
+                finish_reason_map = {
+                    2: "MAX_TOKENS",
+                    3: "SAFETY",
+                    4: "RECITATION",
+                    5: "OTHER"
+                }
+                reason = finish_reason_map.get(candidate.finish_reason, "UNKNOWN")
+                return f"⚠️ Response was blocked or incomplete. Reason: {reason}. Please try rephrasing your question."
+            
+            # Try to get text from parts
+            if candidate.content and candidate.content.parts:
+                text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
+                if text_parts:
+                    return ''.join(text_parts)
+        
+        return "⚠️ No response generated. Please try rephrasing your question."
+    
+    except Exception as e:
+        return f"⚠️ Error extracting response: {str(e)}"
 
 # Display chat messages
 for message in st.session_state.messages:
@@ -45,55 +75,81 @@ if prompt := st.chat_input("Ask me about weather in any city..."):
         with st.spinner("Thinking..."):
             try:
                 # Create Gemini model with user-specified name
-                model = genai.GenerativeModel("gemini-2.5-flash")
+                model = genai.GenerativeModel(model_name)
+                
+                # Configure safety settings to be less restrictive
+                safety_settings = [
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    }
+                ]
                 
                 # Check if user is asking about weather
                 if any(word in prompt.lower() for word in ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']):
                     # Try to extract city
                     extract_prompt = f"""From this question, extract ONLY the city name. Return just the city name, nothing else: "{prompt}" """
                     
-                    extraction = model.generate_content(extract_prompt)
-                    city = extraction.text.strip()
+                    extraction = model.generate_content(extract_prompt, safety_settings=safety_settings)
+                    city = get_response_text(extraction).strip()
                     
-                    # Clean up the city name
-                    city = city.replace('"', '').replace("'", "").split(',')[0].split('.')[0].strip()
-                    
-                    if city and len(city) > 0 and len(city) < 50:
-                        try:
-                            # Fetch weather data
-                            url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
-                            response = requests.get(url, timeout=10)
-                            data = response.json()
-                            
-                            if "results" in data and len(data["results"]) > 0:
-                                result = data["results"][0]
-                                lat = result["latitude"]
-                                lon = result["longitude"]
-                                city_name = result["name"]
+                    # Check if extraction was successful
+                    if city.startswith("⚠️"):
+                        # Extraction failed, try general response
+                        response = model.generate_content(prompt, safety_settings=safety_settings)
+                        assistant_response = get_response_text(response)
+                    else:
+                        # Clean up the city name
+                        city = city.replace('"', '').replace("'", "").split(',')[0].split('.')[0].strip()
+                        
+                        if city and len(city) > 0 and len(city) < 50:
+                            try:
+                                # Fetch weather data
+                                url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
+                                response = requests.get(url, timeout=10)
+                                data = response.json()
                                 
-                                # Last 7 days
-                                end_date = datetime.date.today()
-                                start_date = end_date - datetime.timedelta(days=7)
-                                
-                                # Fetch weather
-                                weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&temperature_unit=fahrenheit"
-                                weather_response = requests.get(weather_url, timeout=10)
-                                weather_data = weather_response.json()
-                                
-                                if "daily" in weather_data:
-                                    temps = weather_data["daily"]["temperature_2m_mean"]
-                                    temp_max = weather_data["daily"]["temperature_2m_max"]
-                                    temp_min = weather_data["daily"]["temperature_2m_min"]
-                                    dates = weather_data["daily"]["time"]
+                                if "results" in data and len(data["results"]) > 0:
+                                    result = data["results"][0]
+                                    lat = result["latitude"]
+                                    lon = result["longitude"]
+                                    city_name = result["name"]
                                     
-                                    avg_temp = round(sum(temps) / len(temps), 1)
-                                    max_temp = max(temp_max)
-                                    min_temp = min(temp_min)
+                                    # Last 7 days
+                                    end_date = datetime.date.today()
+                                    start_date = end_date - datetime.timedelta(days=7)
                                     
-                                    # Create a summary
-                                    daily_summary = "\n".join([f"{dates[i]}: {temps[i]}F" for i in range(len(dates))])
+                                    # Fetch weather
+                                    weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&temperature_unit=fahrenheit"
+                                    weather_response = requests.get(weather_url, timeout=10)
+                                    weather_data = weather_response.json()
                                     
-                                    weather_context = f"""Weather data for {city_name} from {start_date} to {end_date}:
+                                    if "daily" in weather_data:
+                                        temps = weather_data["daily"]["temperature_2m_mean"]
+                                        temp_max = weather_data["daily"]["temperature_2m_max"]
+                                        temp_min = weather_data["daily"]["temperature_2m_min"]
+                                        dates = weather_data["daily"]["time"]
+                                        
+                                        avg_temp = round(sum(temps) / len(temps), 1)
+                                        max_temp = max(temp_max)
+                                        min_temp = min(temp_min)
+                                        
+                                        # Create a summary
+                                        daily_summary = "\n".join([f"{dates[i]}: {temps[i]}F" for i in range(len(dates))])
+                                        
+                                        weather_context = f"""Weather data for {city_name} from {start_date} to {end_date}:
 - Average temperature: {avg_temp} degrees Fahrenheit
 - Highest temperature: {max_temp} degrees Fahrenheit  
 - Lowest temperature: {min_temp} degrees Fahrenheit
@@ -104,24 +160,24 @@ Daily temperatures:
 User question: {prompt}
 
 Provide a helpful, friendly, conversational answer about this weather data."""
-                                    
-                                    response = model.generate_content(weather_context)
-                                    assistant_response = response.text
+                                        
+                                        response = model.generate_content(weather_context, safety_settings=safety_settings)
+                                        assistant_response = get_response_text(response)
+                                    else:
+                                        assistant_response = f"I found {city_name} but couldn't get weather data. Try asking about a different time period!"
                                 else:
-                                    assistant_response = f"I found {city_name} but couldn't get weather data. Try asking about a different time period!"
-                            else:
-                                assistant_response = f"I couldn't find a city called '{city}'. Could you try a different city name?"
-                        
-                        except Exception as e:
-                            assistant_response = f"I had trouble getting weather data: {str(e)}"
-                    else:
-                        # General weather question without specific city
-                        response = model.generate_content(prompt)
-                        assistant_response = response.text
+                                    assistant_response = f"I couldn't find a city called '{city}'. Could you try a different city name?"
+                            
+                            except Exception as e:
+                                assistant_response = f"I had trouble getting weather data: {str(e)}"
+                        else:
+                            # General weather question without specific city
+                            response = model.generate_content(prompt, safety_settings=safety_settings)
+                            assistant_response = get_response_text(response)
                 else:
                     # General conversation
-                    response = model.generate_content(prompt)
-                    assistant_response = response.text
+                    response = model.generate_content(prompt, safety_settings=safety_settings)
+                    assistant_response = get_response_text(response)
                 
                 st.write(assistant_response)
                 st.session_state.messages.append({"role": "assistant", "content": assistant_response})
