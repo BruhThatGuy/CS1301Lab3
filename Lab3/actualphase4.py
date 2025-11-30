@@ -15,24 +15,10 @@ with st.sidebar:
     if api_key:
         genai.configure(api_key=api_key)
         st.success("API Key configured!")
-        
-        # Show available models
-        if st.button("List Available Models"):
-            try:
-                st.write("Available models:")
-                for model in genai.list_models():
-                    if 'generateContent' in model.supported_generation_methods:
-                        st.write(f"- {model.name}")
-            except Exception as e:
-                st.error(f"Error listing models: {e}")
     else:
         st.info("Get your API key from https://makersuite.google.com/app/apikey")
     
     st.write("---")
-    
-    # Manual model name input
-    model_name = st.text_input("Model Name:", value="gemini-pro")
-    st.caption("Click 'List Available Models' above to see options")
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -59,7 +45,7 @@ if prompt := st.chat_input("Ask me about weather in any city..."):
         with st.spinner("Thinking..."):
             try:
                 # Create Gemini model with user-specified name
-                model = genai.GenerativeModel(model_name)
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 
                 # Check if user is asking about weather
                 if any(word in prompt.lower() for word in ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']):
