@@ -4,344 +4,217 @@ import requests
 import google.generativeai as genai
 
 # ============================================================================
-# PAGE CONFIGURATION
+# SETUP
 # ============================================================================
 st.set_page_config(page_title="Weather Chat Assistant", page_icon="🌤️")
 st.title("🌤️ Weather Chat Assistant")
 
-# ============================================================================
-# CONSTANTS
-# ============================================================================
-MODEL_NAME = "gemini-2.5-flash"
-WEATHER_KEYWORDS = ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']
-GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
-WEATHER_API = "https://archive-api.open-meteo.com/v1/archive"
-
-# ============================================================================
-# API KEY CONFIGURATION
-# ============================================================================
+# Get API key from secrets
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-except (KeyError, FileNotFoundError):
-    st.error("⚠️ API key not found. Please configure GEMINI_API_KEY in your secrets.")
-    st.info("For local development, create `.streamlit/secrets.toml` with your API key.")
+except:
+    st.error("⚠️ Please add GEMINI_API_KEY to your secrets!")
     st.stop()
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def get_response_text(response):
-    """
-    Safely extract text from Gemini response with error handling.
-    
-    Args:
-        response: Gemini API response object
-        
-    Returns:
-        str: Extracted text or error message
-    """
-    try:
-        # Check if response has valid candidates
-        if response.candidates and len(response.candidates) > 0:
-            candidate = response.candidates[0]
-            
-            # Check finish reason (1 = STOP means successful completion)
-            if candidate.finish_reason != 1:
-                finish_reason_map = {
-                    2: "MAX_TOKENS",
-                    3: "SAFETY",
-                    4: "RECITATION",
-                    5: "OTHER"
-                }
-                reason = finish_reason_map.get(candidate.finish_reason, "UNKNOWN")
-                return f"⚠️ Response was blocked or incomplete. Reason: {reason}. Please try rephrasing your question."
-            
-            # Extract text from parts
-            if candidate.content and candidate.content.parts:
-                text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
-                if text_parts:
-                    return ''.join(text_parts)
-        
-        return "⚠️ No response generated. Please try rephrasing your question."
-    
-    except Exception as e:
-        return f"⚠️ Error extracting response: {str(e)}"
-
-
-def get_safety_settings():
-    """
-    Configure safety settings for Gemini API.
-    
-    Returns:
-        list: Safety settings configuration
-    """
-    return [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
-    ]
-
-
-def extract_city_name(model, prompt, safety_settings):
-    """
-    Extract city name from user prompt using Gemini.
-    
-    Args:
-        model: Gemini model instance
-        prompt: User's original prompt
-        safety_settings: Safety configuration
-        
-    Returns:
-        str: Extracted and cleaned city name
-    """
-    extract_prompt = f'From this question, extract ONLY the city name. Return just the city name, nothing else: "{prompt}"'
-    extraction = model.generate_content(extract_prompt, safety_settings=safety_settings)
-    city = get_response_text(extraction).strip()
-    
-    # Clean up city name
-    if not city.startswith("⚠️"):
-        city = city.replace('"', '').replace("'", "").split(',')[0].split('.')[0].strip()
-    
-    return city
-
-
-def fetch_location_data(city):
-    """
-    Fetch geocoding data for a city.
-    
-    Args:
-        city: City name to search for
-        
-    Returns:
-        dict: Location data or None if not found
-    """
-    try:
-        url = f"{GEOCODING_API}?name={city}"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        
-        if "results" in data and len(data["results"]) > 0:
-            return data["results"][0]
-        return None
-    except Exception as e:
-        raise Exception(f"Geocoding error: {str(e)}")
-
-
-def fetch_weather_data(lat, lon, start_date, end_date):
-    """
-    Fetch historical weather data from Open-Meteo API.
-    
-    Args:
-        lat: Latitude
-        lon: Longitude
-        start_date: Start date for weather data
-        end_date: End date for weather data
-        
-    Returns:
-        dict: Weather data or None if not found
-    """
-    try:
-        url = f"{WEATHER_API}?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&temperature_unit=fahrenheit"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        
-        if "daily" in data:
-            return data["daily"]
-        return None
-    except Exception as e:
-        raise Exception(f"Weather API error: {str(e)}")
-
-
-def analyze_weather_trend(temps):
-    """
-    Analyze temperature trend from recent data.
-    
-    Args:
-        temps: List of temperatures
-        
-    Returns:
-        str: Trend description (warming, cooling, or stable)
-    """
-    if len(temps) < 3:
-        return "stable"
-    
-    recent_temps = temps[-3:]
-    temp_change = recent_temps[-1] - recent_temps[0]
-    
-    if temp_change > 3:
-        return "warming"
-    elif temp_change < -3:
-        return "cooling"
-    return "stable"
-
-
-def create_weather_context(city_name, start_date, end_date, weather_data, prompt):
-    """
-    Create a comprehensive weather context for the AI model.
-    
-    Args:
-        city_name: Name of the city
-        start_date: Start date of weather data
-        end_date: End date of weather data
-        weather_data: Daily weather data
-        prompt: User's original question
-        
-    Returns:
-        str: Formatted weather context for AI
-    """
-    temps = weather_data["temperature_2m_mean"]
-    temp_max = weather_data["temperature_2m_max"]
-    temp_min = weather_data["temperature_2m_min"]
-    dates = weather_data["time"]
-    
-    # Calculate statistics
-    avg_temp = round(sum(temps) / len(temps), 1)
-    max_temp = max(temp_max)
-    min_temp = min(temp_min)
-    
-    # Analyze trend and predict tomorrow
-    recent_trend = analyze_weather_trend(temps)
-    recent_temps = temps[-3:]
-    predicted_temp = round(sum(recent_temps) / len(recent_temps), 1)
-    tomorrow = end_date + datetime.timedelta(days=1)
-    
-    # Create daily summary
-    daily_summary = "\n".join([f"{dates[i]}: {temps[i]}°F" for i in range(len(dates))])
-    
-    # Build context string
-    context = f"""Weather data for {city_name} from {start_date} to {end_date}:
-- Average temperature over past week: {avg_temp}°F
-- Highest temperature: {max_temp}°F  
-- Lowest temperature: {min_temp}°F
-- Recent trend: {recent_trend}
-- Last 3 days: {recent_temps[-3]}°F, {recent_temps[-2]}°F, {recent_temps[-1]}°F
-
-Daily temperatures:
-{daily_summary}
-
-PREDICTION FOR TOMORROW ({tomorrow}):
-Based on the recent trend, tomorrow's temperature is predicted to be around {predicted_temp}°F (trend: {recent_trend}).
-
-User question: {prompt}
-
-IMPORTANT: Use the predicted temperature for tomorrow to answer the user's question about future activities. Be confident in your prediction based on the data trend. Suggest specific outdoor activities appropriate for the predicted temperature range. Don't say you don't have tomorrow's data - you have a prediction based on the trend."""
-    
-    return context
-
-
-def handle_weather_query(model, prompt, safety_settings):
-    """
-    Handle weather-related queries by fetching data and generating response.
-    
-    Args:
-        model: Gemini model instance
-        prompt: User's question
-        safety_settings: Safety configuration
-        
-    Returns:
-        str: AI-generated response
-    """
-    # Extract city name
-    city = extract_city_name(model, prompt, safety_settings)
-    
-    # Check if extraction was successful
-    if city.startswith("⚠️") or not city or len(city) >= 50:
-        # Extraction failed, try general response
-        response = model.generate_content(prompt, safety_settings=safety_settings)
-        return get_response_text(response)
-    
-    try:
-        # Fetch location data
-        location = fetch_location_data(city)
-        if not location:
-            return f"I couldn't find a city called '{city}'. Could you try a different city name?"
-        
-        city_name = location["name"]
-        lat = location["latitude"]
-        lon = location["longitude"]
-        
-        # Calculate date range (last 7 days)
-        end_date = datetime.date.today()
-        start_date = end_date - datetime.timedelta(days=7)
-        
-        # Fetch weather data
-        weather_data = fetch_weather_data(lat, lon, start_date, end_date)
-        if not weather_data:
-            return f"I found {city_name} but couldn't get weather data. Try asking about a different time period!"
-        
-        # Create context and generate response
-        weather_context = create_weather_context(city_name, start_date, end_date, weather_data, prompt)
-        response = model.generate_content(weather_context, safety_settings=safety_settings)
-        return get_response_text(response)
-        
-    except Exception as e:
-        return f"I had trouble getting weather data: {str(e)}"
-
-
-def is_weather_query(prompt):
-    """
-    Check if the prompt is asking about weather.
-    
-    Args:
-        prompt: User's question
-        
-    Returns:
-        bool: True if weather-related query
-    """
-    return any(word in prompt.lower() for word in WEATHER_KEYWORDS)
-
+# Create the AI model
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ============================================================================
-# SESSION STATE INITIALIZATION
+# INITIALIZE CHAT HISTORY
 # ============================================================================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ============================================================================
-# DISPLAY CHAT HISTORY
-# ============================================================================
+# Show previous messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
 # ============================================================================
-# MAIN CHAT INTERFACE
+# CHAT INPUT
 # ============================================================================
-if prompt := st.chat_input("Ask me about weather in any city..."):
-    # Check API key
-    if not api_key:
-        st.error("Please enter your Gemini API key in the sidebar.")
-        st.stop()
-    
-    # Display user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+user_input = st.chat_input("Ask me about weather in any city...")
+
+if user_input:
+    # Show user message
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.write(prompt)
+        st.write(user_input)
     
-    # Generate assistant response
+    # Check if asking about weather
+    weather_words = ['weather', 'temperature', 'temp', 'hot', 'cold', 'warm', 'climate']
+    is_weather_question = any(word in user_input.lower() for word in weather_words)
+    
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            try:
-                # Initialize model and settings
-                model = genai.GenerativeModel(MODEL_NAME)
-                safety_settings = get_safety_settings()
+            
+            if is_weather_question:
+                try:
+                    # Step 1: Ask AI to extract city and when they're asking about
+                    extract_prompt = f'''From this question, extract:
+1. The city name
+2. When they're asking about (e.g., "tomorrow", "next week", "January 15", "in 30 days")
+
+Question: "{user_input}"
+
+Respond in this exact format:
+City: [city name]
+When: [time reference]'''
+                    
+                    extraction = model.generate_content(extract_prompt)
+                    extracted = extraction.text.strip()
+                    
+                    # Parse the response
+                    city = ""
+                    when = ""
+                    for line in extracted.split('\n'):
+                        if line.startswith('City:'):
+                            city = line.replace('City:', '').strip().replace('"', '').replace("'", "")
+                        elif line.startswith('When:'):
+                            when = line.replace('When:', '').strip()
+                    
+                    # Step 2: Figure out how many days in the future they're asking about
+                    today = datetime.date.today()
+                    
+                    date_prompt = f'''Today is {today}. The user asked about: "{when}"
+                    
+How many days from today is this? Just give me a number.
+If it's "tomorrow", say 1.
+If it's "next week", say 7.
+If it's a specific date, calculate the difference.
+If you're not sure or they didn't specify, say 1.
+
+Just respond with a single number, nothing else.'''
+                    
+                    date_response = model.generate_content(date_prompt)
+                    days_ahead = int(date_response.text.strip())
+                    
+                    # Step 3: Look up the city
+                    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
+                    geo_data = requests.get(geo_url, timeout=10).json()
+                    
+                    if "results" not in geo_data or len(geo_data["results"]) == 0:
+                        answer = f"Couldn't find a city called '{city}'."
+                    else:
+                        lat = geo_data["results"][0]["latitude"]
+                        lon = geo_data["results"][0]["longitude"]
+                        city_name = geo_data["results"][0]["name"]
+                        
+                        # Step 4: Decide which prediction method to use
+                        if days_ahead <= 7:
+                            # NEAR FUTURE (≤7 days): Use recent trend
+                            week_ago = today - datetime.timedelta(days=7)
+                            
+                            weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={week_ago}&end_date={today}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&temperature_unit=fahrenheit"
+                            weather_data = requests.get(weather_url, timeout=10).json()
+                            
+                            if "daily" in weather_data:
+                                temps = weather_data["daily"]["temperature_2m_mean"]
+                                dates = weather_data["daily"]["time"]
+                                
+                                # Calculate stats
+                                avg_temp = sum(temps) / len(temps)
+                                max_temp = max(weather_data["daily"]["temperature_2m_max"])
+                                min_temp = min(weather_data["daily"]["temperature_2m_min"])
+                                
+                                # Predict based on recent temps
+                                recent_temps = temps[-3:]
+                                predicted_temp = sum(recent_temps) / len(recent_temps)
+                                target_date = today + datetime.timedelta(days=days_ahead)
+                                
+                                # Make daily list
+                                daily_list = ""
+                                for i in range(len(dates)):
+                                    daily_list += f"{dates[i]}: {temps[i]}°F\n"
+                                
+                                weather_prompt = f"""Here's the RECENT weather data for {city_name}:
+
+Average temperature (last 7 days): {avg_temp:.1f}°F
+Highest: {max_temp}°F
+Lowest: {min_temp}°F
+Last 3 days: {recent_temps[0]}°F, {recent_temps[1]}°F, {recent_temps[2]}°F
+
+Daily temperatures:
+{daily_list}
+
+Based on the recent trend, {target_date} is predicted to be around {predicted_temp:.1f}°F.
+
+User's question: {user_input}
+
+Answer their question using this recent weather data and prediction."""
+                                
+                                response = model.generate_content(weather_prompt)
+                                answer = response.text
+                            else:
+                                answer = f"Found {city_name} but couldn't get recent weather data."
+                        
+                        else:
+                            # FAR FUTURE (>7 days): Use historical data from same time period
+                            target_date = today + datetime.timedelta(days=days_ahead)
+                            
+                            # Get data from the same period in previous years
+                            # For example, if they ask about January 15, 2026, get January 15 from 2015-2025
+                            historical_data = []
+                            years_to_check = 10  # Check last 10 years
+                            
+                            for year_offset in range(1, years_to_check + 1):
+                                historical_date = target_date.replace(year=target_date.year - year_offset)
+                                start = historical_date - datetime.timedelta(days=3)
+                                end = historical_date + datetime.timedelta(days=3)
+                                
+                                try:
+                                    weather_url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start}&end_date={end}&daily=temperature_2m_mean&temperature_unit=fahrenheit"
+                                    weather_response = requests.get(weather_url, timeout=10).json()
+                                    
+                                    if "daily" in weather_response:
+                                        year_temps = weather_response["daily"]["temperature_2m_mean"]
+                                        year_avg = sum(year_temps) / len(year_temps)
+                                        historical_data.append({
+                                            'year': target_date.year - year_offset,
+                                            'avg_temp': year_avg
+                                        })
+                                except:
+                                    continue
+                            
+                            if len(historical_data) > 0:
+                                # Calculate historical average
+                                all_temps = [d['avg_temp'] for d in historical_data]
+                                historical_avg = sum(all_temps) / len(all_temps)
+                                historical_min = min(all_temps)
+                                historical_max = max(all_temps)
+                                
+                                # Build historical summary
+                                history_text = ""
+                                for entry in historical_data:
+                                    history_text += f"{entry['year']}: {entry['avg_temp']:.1f}°F\n"
+                                
+                                weather_prompt = f"""Here's HISTORICAL data for {city_name} around {target_date.strftime('%B %d')} from the past {years_to_check} years:
+
+Historical average for this time of year: {historical_avg:.1f}°F
+Historical range: {historical_min:.1f}°F to {historical_max:.1f}°F
+
+Year-by-year data for this date:
+{history_text}
+
+Target prediction date: {target_date}
+User's question: {user_input}
+
+Based on this historical pattern, predict what the weather will be like on {target_date}. Use the historical average as your baseline and consider any trends you see in the data."""
+                                
+                                response = model.generate_content(weather_prompt)
+                                answer = response.text
+                            else:
+                                answer = f"Found {city_name} but couldn't get enough historical data for that time period."
                 
-                # Route to appropriate handler
-                if is_weather_query(prompt):
-                    assistant_response = handle_weather_query(model, prompt, safety_settings)
-                else:
-                    # General conversation
-                    response = model.generate_content(prompt, safety_settings=safety_settings)
-                    assistant_response = get_response_text(response)
-                
-                # Display and save response
-                st.write(assistant_response)
-                st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-                
-            except Exception as e:
-                error_msg = f"Error: {str(e)}"
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                except Exception as e:
+                    answer = f"Had trouble getting weather data: {str(e)}"
+            
+            else:
+                # Not a weather question, just chat normally
+                response = model.generate_content(user_input)
+                answer = response.text
+            
+            # Show the answer
+            st.write(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
