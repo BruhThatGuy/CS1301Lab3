@@ -77,22 +77,23 @@ if st.button("🔮 Predict Weather"):
     
     target_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
     
-    prompt = f"""Based on this historical weather data for {city_name}, predict the weather for {target_date}:
+    prompt = f"""Based on this historical weather data for {city_name}, predict the temperature for {target_date}:
 
 Historical Data (20 years):
 - Average temperature: {avg_temp:.1f}{unit_symbol}
 - Coldest: {min_temp:.1f}{unit_symbol}
 - Hottest: {max_temp:.1f}{unit_symbol}
 
-Give me a prediction for {target_date} that includes:
-1. Expected temperature range in {unit_symbol}
-2. Weather conditions (sunny, cloudy, rainy, etc.)
-3. Any other relevant details
+IMPORTANT: Respond with ONLY a temperature value or range. No explanation, no analysis, no extra text.
+Examples of valid responses:
+- "65{unit_symbol}"
+- "58-72{unit_symbol}"
+- "45.5{unit_symbol}"
 
-Write it as a short weather forecast."""
+Your response:"""
 
     # Call Gemini API
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={API_KEY}"
     
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
