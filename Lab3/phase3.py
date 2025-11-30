@@ -92,7 +92,7 @@ Give me a prediction for {target_date} that includes:
 Write it as a short weather forecast."""
 
     # Call Gemini API
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={API_KEY}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
     
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
