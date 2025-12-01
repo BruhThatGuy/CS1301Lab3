@@ -73,13 +73,6 @@ Your response:"""
         prediction = ai_data["candidates"][0]["content"]["parts"][0]["text"]
         st.subheader(f" Weather Prediction for {target_date}")
         st.write(prediction)
-        if "groundingMetadata" in ai_data["candidates"][0]:
-            sources = ai_data["candidates"][0]["groundingMetadata"].get("groundingAttributions", [])
-            if sources:
-                st.subheader("Sources Used")
-                for source in sources:
-                    if "web" in source:
-                        st.write(f"- [{source['web']['title']}]({source['web']['uri']})")
     except:
         st.error("AI couldn't generate a prediction. Try again!")
         st.json(ai_data)  
