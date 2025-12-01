@@ -2,5 +2,6 @@ streamlit
 google-generativeai
 requests
 pandas
-dataparser
 datetime
+dateparser
+google
